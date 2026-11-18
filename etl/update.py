@@ -3,7 +3,8 @@
 Beta = Cov(BTC % log return, VIX point change) / Var(VIX point change)
      = BTC % move per +1 VIX point.
 
-Hourly obs: consecutive completed ^VIX 60m bars within one US session (no overnight pairs).
+Hourly obs: consecutive completed ^VIX 60m bars within one ET day (incl. Cboe global trading
+hours ~03:15-09:15 ET; no overnight pairs).
 BTC is sampled (Coinbase 15m candle close) at each VIX bar's end time.
 Daily obs: VIX daily close vs BTC at the last full hour before the VIX close.
 """
@@ -16,7 +17,7 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; btc-vix-beta/1.0)"}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 D = os.path.join(ROOT, "data")
 H_CSV, D_CSV, OUT = (os.path.join(D, f) for f in ("hourly.csv", "daily.csv", "beta.json"))
-WIN_H, WIN_H_LONG, WIN_D, WIN_D_LONG = 30, 120, 20, 60
+WIN_H, WIN_H_LONG, WIN_D, WIN_D_LONG = 65, 260, 20, 60  # ~5 / ~20 sessions of 13 hourly bars
 
 
 def get(url, tries=5):
