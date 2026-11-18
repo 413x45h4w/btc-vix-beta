@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BTC/VIX Spot Beta</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+<style>
+:root{--bg:#fbfaf8;--fg:#1d1d1b;--mut:#6b6a66;--line:#e4e1da;--panel:#fff;--a:#c2410c;--b:#2563eb;--neg:#b91c1c;--pos:#15803d}
+@media(prefers-color-scheme:dark){:root{--bg:#141413;--fg:#ecebe6;--mut:#9b9a94;--line:#2c2b28;--panel:#1c1c1a;--a:#fb923c;--b:#60a5fa;--neg:#f87171;--pos:#4ade80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:24px 16px 48px}
+h1{font:400 28px/1.2 Georgia,serif;margin:0 0 4px}h2{font-size:15px;margin:28px 0 8px}
+.sub{color:var(--mut);margin:0 0 20px}.lead{font-size:17px;margin:0 0 20px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card .k{color:var(--mut);font-size:13px}.card .v{font:400 30px/1.2 Georgia,serif;font-variant-numeric:tabular-nums}
+.card .s{color:var(--mut);font-size:13px;font-variant-numeric:tabular-nums}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;min-height:280px;position:relative}
+.u-legend{font-size:12px}.u-axis{color:var(--mut)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}th{color:var(--mut);font-weight:500}th:first-child,td:first-child{text-align:left}
+.wrap{overflow-x:auto}.neg{color:var(--neg)}.pos{color:var(--pos)}
+details{margin-top:28px;color:var(--mut)}summary{cursor:pointer;color:var(--fg)}
+.err{color:var(--neg)}#tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>BTC/VIX spot beta</h1>
+<p class="sub">How much BTC moves (%) for each +1 point move in VIX. <span id="upd">Loading…</span></p>
+<p class="lead" id="lead">—</p>
+<div class="cards" id="cards"></div>
+
+<h2>Rolling hourly beta</h2>
+<div class="box" id="ch_h"></div>
+<h2>Rolling daily beta</h2>
+<div class="box" id="ch_d"></div>
+<h2 id="sc_title">Hourly moves, last window</h2>
+<div class="box" id="sc"><div id="tip"></div></div>
+<h2>Latest hourly observations</h2>
+<div class="wrap"><table><thead><tr><th>Time (ET)</th><th>VIX</th><th>ΔVIX (pts)</th><th>BTC</th><th>BTC ret (%)</th></tr></thead><tbody id="tb"></tbody></table></div>
+
+<details>
+<summary>Definitions and sources</summary>
+<p><b>Beta</b> = Cov(BTC log return %, ΔVIX pts) / Var(ΔVIX pts): the slope of a regression of BTC % moves on VIX point changes. A beta of −1.0 means BTC has typically fallen 1% for each 1-point rise in VIX. <b>Corr</b> is the correlation of the same two series.</p>
+<p><b>Hourly</b>: completed 60-minute VIX bars during the US cash session (bar ends ≈ 10:30, 11:30 … 15:30, close). Overnight gaps are excluded. BTC is sampled from 15-minute Coinbase candles at each bar end. <b>Daily</b>: VIX close vs BTC at the last full hour before the VIX close (≈16:00 ET).</p>
+<p>VIX: Yahoo Finance (^VIX, may be delayed). BTC: Coinbase Exchange BTC-USD. The repo's GitHub Action refreshes this every hour; raw series are in <code>data/hourly.csv</code> and <code>data/daily.csv</code>.</p>
+</details>
+<p class="err" id="errs"></p>
+</main>
+<script>
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmtT=t=>new Date(t*1e3).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+const f=(x,d=2)=>x==null||isNaN(x)?'—':(x>0?'+':'')+x.toFixed(d);
+const last=a=>{for(let i=a.length-1;i>=0;i--)if(a[i]!=null)return a[i];return null};
+const plots={};
+function src(){const m=location.hostname.match(/^([^.]+)\.github\.io$/),r=location.pathname.split('/').filter(Boolean)[0];
+  return m&&r?[`https://raw.githubusercontent.com/${m[1]}/${r}/main/data/beta.json`,'data/beta.json']:['data/beta.json'];}
+async function load(){for(const u of src()){try{const r=await fetch(u+'?'+Date.now(),{cache:'no-store'});if(r.ok)return r.json()}catch(e){}}throw Error('no data')}
+function card(k,b,c,n){return `<div class="card"><div class="k">${k}</div><div class="v ${b<0?'neg':b>0?'pos':''}">${f(b)}</div><div class="s">corr ${f(c)} · ${n}</div></div>`}
+function line(id,blk,lab){
+  const el=document.getElementById(id),w=el.clientWidth-24;
+  const data=[blk.t,blk.beta,blk.beta_long];
+  const opts={width:w,height:260,scales:{x:{time:true}},
+    axes:[{stroke:css('--mut'),grid:{stroke:css('--line')},values:(u,v)=>v.map(t=>new Date(t*1e3).toLocaleDateString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric'}))},
+          {stroke:css('--mut'),grid:{stroke:css('--line')},label:'β (% per VIX pt)'}],
+    series:[{value:(u,t)=>t==null?'—':fmtT(t)},{label:`β ${blk.win} ${lab}`,stroke:css('--a'),width:2,value:(u,v)=>f(v)},{label:`β ${blk.win_long} ${lab}`,stroke:css('--b'),width:2,value:(u,v)=>f(v)}]};
+  plots[id]?.destroy();el.querySelectorAll('.uplot').forEach(n=>n.remove());
+  plots[id]=new uPlot(opts,data,el);
+}
+function scatter(blk){
+  const n=Math.min(blk.win_long,blk.t.length),x=blk.dv.slice(-n),y=blk.r.slice(-n),t=blk.t.slice(-n);
+  const el=document.getElementById('sc'),W=el.clientWidth-24,H=260,p=40;
+  document.getElementById('sc_title').textContent=`Hourly moves, last ${n} observations`;
+  if(!n){el.querySelector('svg')?.remove();return}
+  const xm=Math.max(...x.map(Math.abs),0.1)*1.1,ym=Math.max(...y.map(Math.abs),0.1)*1.1;
+  const X=v=>p+(v+xm)/(2*xm)*(W-p-10),Y=v=>10+(ym-v)/(2*ym)*(H-p-10);
+  const b=blk.beta_long[blk.beta_long.length-1];
+  const mx=x.reduce((a,c)=>a+c,0)/n,my=y.reduce((a,c)=>a+c,0)/n;
+  let s=`<svg width="${W}" height="${H}" role="img" aria-label="Scatter of hourly VIX point changes against BTC percent returns">`;
+  s+=`<line x1="${X(0)}" x2="${X(0)}" y1="10" y2="${H-p}" stroke="${css('--line')}"/><line x1="${p}" x2="${W-10}" y1="${Y(0)}" y2="${Y(0)}" stroke="${css('--line')}"/>`;
+  x.forEach((v,i)=>{s+=`<circle cx="${X(v)}" cy="${Y(y[i])}" r="3.5" fill="${css('--b')}" fill-opacity=".55" data-i="${i}"/>`});
+  if(b!=null){const a=my-b*mx;s+=`<line x1="${X(-xm)}" y1="${Y(a-b*xm)}" x2="${X(xm)}" y2="${Y(a+b*xm)}" stroke="${css('--a')}" stroke-width="2" clip-path="inset(0)"/>`}
+  s+=`<text x="${W-10}" y="${H-p+28}" text-anchor="end" fill="${css('--mut')}" font-size="12">ΔVIX (pts) →</text><text x="${p}" y="22" fill="${css('--mut')}" font-size="12">BTC ret (%)</text>`;
+  [-xm*.8,0,xm*.8].forEach(v=>s+=`<text x="${X(v)}" y="${H-p+14}" text-anchor="middle" fill="${css('--mut')}" font-size="11">${v.toFixed(1)}</text>`);
+  [-ym*.8,0,ym*.8].forEach(v=>s+=`<text x="${p-6}" y="${Y(v)+4}" text-anchor="end" fill="${css('--mut')}" font-size="11">${v.toFixed(1)}</text>`);
+  el.querySelector('svg')?.remove();el.insertAdjacentHTML('beforeend',s+'</svg>');
+  const tip=document.getElementById('tip');
+  el.querySelector('svg').onmousemove=e=>{const c=e.target.closest('circle');if(!c){tip.style.display='none';return}const i=+c.dataset.i;
+    tip.innerHTML=`${fmtT(t[i])}<br>ΔVIX ${f(x[i])} · BTC ${f(y[i])}%`;tip.style.display='block';
+    const r=el.getBoundingClientRect();tip.style.left=Math.min(e.clientX-r.left+10,W-150)+'px';tip.style.top=(e.clientY-r.top-40)+'px'};
+}
+let J;
+function render(){
+  const h=J.hourly,d=J.daily,bh=last(h.beta),bd=last(d.beta_long);
+  document.getElementById('upd').textContent=`Updated ${fmtT(J.updated)} ET.`;
+  document.getElementById('lead').innerHTML=bh==null?'Not enough hourly observations yet.':
+    `Over the last ${h.win} hourly moves, BTC has moved <b>${f(bh)}%</b> per +1 VIX point (corr ${f(last(h.corr))}). On daily closes (${d.win_long} days) the beta is <b>${f(bd)}%</b>.`;
+  document.getElementById('cards').innerHTML=
+    card(`Hourly β · last ${h.win} obs`,bh,last(h.corr),'≈5 sessions')+
+    card(`Hourly β · last ${h.win_long} obs`,last(h.beta_long),last(h.corr_long),'≈20 sessions')+
+    card(`Daily β · last ${d.win} days`,last(d.beta),last(d.corr),'1 month')+
+    card(`Daily β · last ${d.win_long} days`,bd,last(d.corr_long),'3 months')+
+    `<div class="card"><div class="k">Last sample · ${h.t.length?fmtT(h.t.at(-1)):'—'}</div><div class="v">${h.vix.length?h.vix.at(-1).toFixed(2):'—'}</div><div class="s">VIX · BTC $${h.btc.length?Math.round(h.btc.at(-1)).toLocaleString():'—'}</div></div>`;
+  line('ch_h',h,'hr');line('ch_d',d,'d');scatter(h);
+  const rows=[];for(let i=h.t.length-1;i>=Math.max(0,h.t.length-12);i--)
+    rows.push(`<tr><td>${fmtT(h.t[i])}</td><td>${h.vix[i].toFixed(2)}</td><td class="${h.dv[i]>0?'neg':'pos'}">${f(h.dv[i])}</td><td>${Math.round(h.btc[i]).toLocaleString()}</td><td class="${h.r[i]<0?'neg':'pos'}">${f(h.r[i])}</td></tr>`);
+  document.getElementById('tb').innerHTML=rows.join('');
+  document.getElementById('errs').textContent=J.errors?.length?'Last update had problems: '+J.errors.join('; '):'';
+}
+async function go(){try{J=await load();render()}catch(e){document.getElementById('upd').textContent='Could not load data yet.'}}
+go();setInterval(go,10*60e3);let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>J&&render(),200)});
+</script>
+</body>
+</html>
