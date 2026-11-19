@@ -17,6 +17,8 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; btc-vix-beta/1.0)"}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 D = os.path.join(ROOT, "data")
 H_CSV, D_CSV, OUT = (os.path.join(D, f) for f in ("hourly.csv", "daily.csv", "beta.json"))
+LONG_START = int(datetime(2021, 1, 1, tzinfo=ET).timestamp())
+WIN_L, WIN_L_LONG, TAIL_D = 60, 252, 400  # long view: 3-month & 1-year daily windows
 WIN_H, WIN_H_LONG, WIN_D, WIN_D_LONG = 65, 260, 20, 60  # ~5 / ~20 sessions of 13 hourly bars
 
 
@@ -33,9 +35,10 @@ def get(url, tries=5):
 
 
 def yahoo(symbol, interval, rng):
+    q = f"range={rng}" if not rng.startswith("period1") else rng
     for host in ("query1", "query2"):
         try:
-            j = get(f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={rng}")
+            j = get(f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&{q}")
             return j["chart"]["result"][0]
         except Exception as e:
             last = e
@@ -110,7 +113,11 @@ def update_hourly(now):
 
 def update_daily(now):
     rows = load(D_CSV)
-    r = yahoo("%5EVIX", "1d", "1mo" if len(rows) > 100 else "1y")
+    if not rows or min(map(int, rows)) > LONG_START + 7 * 86400:  # one-time backfill to 2021
+        rng = f"period1={LONG_START - 14 * 86400}&period2={now}"
+    else:
+        rng = "1mo"
+    r = yahoo("%5EVIX", "1d", rng)
     end_tod = session_end_tod(r["meta"])
     today = datetime.fromtimestamp(now, ET).date()
     for ts, c in zip(r.get("timestamp", []), r["indicators"]["quote"][0]["close"]):
@@ -173,6 +180,31 @@ def block(o, w, wl):
             "vix": [s[3] for s in o], "btc": [s[4] for s in o], "win": w, "win_long": wl}
 
 
+def tail(b, n):
+    return {k: (v[-n:] if isinstance(v, list) else v) for k, v in b.items()}
+
+
+def long_view(o):
+    """Daily obs since 2021: 60d/252d rolling beta (thinned to weekly) + calendar-year betas."""
+    b = block(o, WIN_L, WIN_L_LONG)
+    keep = [i for i in range(len(o)) if i % 5 == 0 or i == len(o) - 1]
+    lv = {k: [b[k][i] for i in keep] for k in ("t", "beta", "corr", "beta_long", "corr_long")}
+    lv.update(win=WIN_L, win_long=WIN_L_LONG, n=len(o), start=o[0][0] if o else None)
+    years = {}
+    for s in o:
+        years.setdefault(datetime.fromtimestamp(s[0], ET).year, []).append(s)
+    lv["years"] = []
+    for y, seg in sorted(years.items()):
+        bb, cc = stats([s[1] for s in seg], [s[2] for s in seg])
+        lv["years"].append({"y": y, "n": len(seg), "beta": None if bb is None else round(bb, 3),
+                            "corr": None if cc is None else round(cc, 3),
+                            "vix_chg": round(seg[-1][3] - seg[0][3] + seg[0][1], 2),
+                            "btc_ret": round(100 * (seg[-1][4] / (seg[0][4] / math.exp(seg[0][2] / 100)) - 1), 1)})
+    bb, cc = stats([s[1] for s in o], [s[2] for s in o]) if len(o) > 2 else (None, None)
+    lv["all"] = {"n": len(o), "beta": None if bb is None else round(bb, 3), "corr": None if cc is None else round(cc, 3)}
+    return lv
+
+
 def main():
     os.makedirs(D, exist_ok=True)
     now = int(time.time())
@@ -185,9 +217,11 @@ def main():
         d = update_daily(now)
     except Exception as e:
         errs.append(f"daily: {e}"); d = load(D_CSV)
+    od = [o for o in obs(d, False) if o[0] >= LONG_START]
     out = {"updated": now, "errors": errs,
            "hourly": block(obs(h, True), WIN_H, WIN_H_LONG),
-           "daily": block(obs(d, False), WIN_D, WIN_D_LONG)}
+           "daily": tail(block(od, WIN_D, WIN_D_LONG), TAIL_D),
+           "long": long_view(od)}
     with open(OUT, "w") as f:
         json.dump(out, f, separators=(",", ":"))
     print(f"hourly obs={len(out['hourly']['t'])} daily obs={len(out['daily']['t'])} errors={errs}")

@@ -1,7 +1,7 @@
 name: update
 on:
   schedule:
-    - cron: "50 * * * *"   # hourly; VIX bars close at :30, +delay buffer
+    - cron: "7,22,37,52 * * * *"   # GitHub drops many scheduled runs; 4 tries/hour, runs are idempotent
   workflow_dispatch:
 permissions:
   contents: write
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - run: python3 etl/update.py
@@ -20,4 +20,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data
-          git diff --cached --quiet || { git commit -qm "data $(date -u +%FT%H:%MZ)" && git push; }
+          git diff --cached --quiet -- data/hourly.csv data/daily.csv || { git commit -qm "data $(date -u +%FT%H:%MZ)" && git push; }
