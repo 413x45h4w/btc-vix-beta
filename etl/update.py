@@ -17,7 +17,7 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; btc-vix-beta/1.0)"}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 D = os.path.join(ROOT, "data")
 H_CSV, D_CSV, OUT = (os.path.join(D, f) for f in ("hourly.csv", "daily.csv", "beta.json"))
-LONG_START = int(datetime(2021, 1, 1, tzinfo=ET).timestamp())
+LONG_START = int(datetime(2023, 1, 1, tzinfo=ET).timestamp())
 WIN_L, WIN_L_LONG, TAIL_D = 60, 252, 400  # long view: 3-month & 1-year daily windows
 WIN_H, WIN_H_LONG, WIN_D, WIN_D_LONG = 65, 260, 20, 60  # ~5 / ~20 sessions of 13 hourly bars
 
@@ -113,7 +113,7 @@ def update_hourly(now):
 
 def update_daily(now):
     rows = load(D_CSV)
-    if not rows or min(map(int, rows)) > LONG_START + 7 * 86400:  # one-time backfill to 2021
+    if not rows or min(map(int, rows)) > LONG_START + 7 * 86400:  # one-time backfill to LONG_START
         rng = f"period1={LONG_START - 14 * 86400}&period2={now}"
     else:
         rng = "1mo"
@@ -185,7 +185,7 @@ def tail(b, n):
 
 
 def long_view(o):
-    """Daily obs since 2021: 60d/252d rolling beta (thinned to weekly) + calendar-year betas."""
+    """Daily obs since LONG_START: 60d/252d rolling beta (thinned to weekly) + calendar-year betas."""
     b = block(o, WIN_L, WIN_L_LONG)
     keep = [i for i in range(len(o)) if i % 5 == 0 or i == len(o) - 1]
     lv = {k: [b[k][i] for i in keep] for k in ("t", "beta", "corr", "beta_long", "corr_long")}

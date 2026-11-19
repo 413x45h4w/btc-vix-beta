@@ -37,7 +37,7 @@ details{margin-top:28px;color:var(--mut)}summary{cursor:pointer;color:var(--fg)}
 <div class="box" id="ch_h"></div>
 <h2>Rolling daily beta</h2>
 <div class="box" id="ch_d"></div>
-<h2>Since 2021 · daily</h2>
+<h2>Since 2023 · daily</h2>
 <p class="sub" id="long_lead">—</p>
 <div class="box" id="ch_l"></div>
 <div class="wrap" style="margin-top:12px"><table><thead><tr><th>Year</th><th>β</th><th>Corr</th><th>Days</th><th>VIX chg (pts)</th><th>BTC ret (%)</th></tr></thead><tbody id="yr"></tbody></table></div>
@@ -49,7 +49,7 @@ details{margin-top:28px;color:var(--mut)}summary{cursor:pointer;color:var(--fg)}
 <details>
 <summary>Definitions and sources</summary>
 <p><b>Beta</b> = Cov(BTC log return %, ΔVIX pts) / Var(ΔVIX pts): the slope of a regression of BTC % moves on VIX point changes. A beta of −1.0 means BTC has typically fallen 1% for each 1-point rise in VIX. <b>Corr</b> is the correlation of the same two series.</p>
-<p><b>Hourly</b>: completed 60-minute VIX bars from Cboe's early global trading hours (from about 03:15 ET) through the 16:15 close. Overnight gaps are excluded. BTC is sampled from 15-minute Coinbase candles at each bar end. <b>Daily</b>: VIX close vs BTC at the last full hour before the VIX close (≈16:00 ET). The daily chart shows the last ~400 days; the Since 2021 view uses the full daily history with 60- and 252-day windows plus calendar-year betas.</p>
+<p><b>Hourly</b>: completed 60-minute VIX bars from Cboe's early global trading hours (from about 03:15 ET) through the 16:15 close. Overnight gaps are excluded. BTC is sampled from 15-minute Coinbase candles at each bar end. <b>Daily</b>: VIX close vs BTC at the last full hour before the VIX close (≈16:00 ET). The daily chart shows the last ~400 days; the Since 2023 view uses the full daily history with 60- and 252-day windows plus calendar-year betas.</p>
 <p>VIX: Yahoo Finance (^VIX, may be delayed). BTC: Coinbase Exchange BTC-USD. The repo's GitHub Action refreshes this every hour; raw series are in <code>data/hourly.csv</code> and <code>data/daily.csv</code>.</p>
 </details>
 <p class="err" id="errs"></p>
